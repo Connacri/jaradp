@@ -164,6 +164,7 @@ export class JORADPScannerDaemon {
     }
 
     // Save Journal in ObjectBox
+    const sommairePreview = fullText.slice(0, 5000);
     const journalEntity: JournalEntity = {
       id: journalId,
       year,
@@ -175,6 +176,7 @@ export class JORADPScannerDaemon {
       pdfUrl,
       localPdfProxyUrl,
       actsCount: newActs.length,
+      sommairePreview,
       isScraped: true,
       scrapedAt: new Date().toISOString()
     };

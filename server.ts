@@ -210,6 +210,7 @@ app.get('/api/joradp/journals', async (req: Request, res: Response) => {
         localPdfProxyUrl: `/api/joradp/pdf/${year}/${num}`,
         pageCount: cached?.pageCount || null,
         actsCount: cached?.actsCount || null,
+        sommairePreview: cached?.sommairePreview || undefined,
         isScraped: !!cached?.isScraped
       };
     });

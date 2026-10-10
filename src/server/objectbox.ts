@@ -29,6 +29,7 @@ export interface JournalEntity {
   actsCount: number;
   isScraped: boolean;
   scrapedAt: string;
+  sommairePreview?: string;
 }
 
 export interface LegalActEntity {

@@ -24,6 +24,7 @@ if (typeof window !== 'undefined') {
 
 interface InAppPdfViewerProps {
   pdfUrl: string;
+  fallbackUrl?: string;
   initialPage?: number;
   title?: string;
   year?: number;
@@ -33,6 +34,7 @@ interface InAppPdfViewerProps {
 
 export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
   pdfUrl,
+  fallbackUrl,
   initialPage = 1,
   title,
   year,
@@ -114,6 +116,29 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
         setLoading(false);
       } catch (err: any) {
         if (isCancelled) return;
+        
+        // If initial URL failed and a different fallback URL is provided, retry with fallbackUrl
+        if (fallbackUrl && fallbackUrl !== pdfUrl) {
+          try {
+            console.log('Retrying PDF with fallback URL:', fallbackUrl);
+            const fallbackTask = pdfjsLib.getDocument({
+              url: fallbackUrl,
+              withCredentials: false
+            });
+            const doc = await fallbackTask.promise;
+            if (isCancelled) return;
+
+            setPdfDoc(doc);
+            setNumPages(doc.numPages);
+            setCurrentPage(Math.min(initialPage, doc.numPages));
+            setPageInput(String(Math.min(initialPage, doc.numPages)));
+            setLoading(false);
+            return;
+          } catch (fallbackErr: any) {
+            console.error('Fallback PDF load error:', fallbackErr);
+          }
+        }
+
         console.error('In-App PDF load error:', err);
         setError(`Impossible de charger le PDF en application: ${err.message || 'Erreur réseau'}`);
         setLoading(false);

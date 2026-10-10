@@ -1,22 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Scale, Download, ArrowUpRight, ShieldCheck, FileCheck } from 'lucide-react';
 import { AlgerianCode } from '../types/joradp';
+import { STATIC_LANDMARK_CODES } from '../data/staticJoradp';
 
 interface CodesViewProps {
   onSelectCode: (code: AlgerianCode) => void;
 }
 
 export const CodesView: React.FC<CodesViewProps> = ({ onSelectCode }) => {
-  const [codes, setCodes] = useState<AlgerianCode[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [codes, setCodes] = useState<AlgerianCode[]>(STATIC_LANDMARK_CODES);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/joradp/codes')
-      .then(r => r.json())
-      .then(d => {
-        if (d.codes) setCodes(d.codes);
+      .then(async r => {
+        if (!r.ok) throw new Error('Not ok');
+        return r.json();
       })
-      .catch(console.error)
+      .then(d => {
+        if (d.codes && d.codes.length > 0) setCodes(d.codes);
+      })
+      .catch(() => {
+        setCodes(STATIC_LANDMARK_CODES);
+      })
       .finally(() => setLoading(false));
   }, []);
 

@@ -15,6 +15,7 @@ import {
   Info
 } from 'lucide-react';
 import { ElasticsearchResponse, ElasticsearchHit, ScrapedAct } from '../types/joradp';
+import { searchStaticActs } from '../data/staticJoradp';
 
 interface ElasticsearchBarProps {
   onSelectResult: (act: ScrapedAct, year: number, journalNum: number) => void;
@@ -67,13 +68,22 @@ export const ElasticsearchBar: React.FC<ElasticsearchBarProps> = ({
       params.append('size', '50');
 
       const res = await fetch(`/api/search/elasticsearch?${params.toString()}`);
-      const data: ElasticsearchResponse = await res.json();
-      setResponse(data);
-    } catch (err) {
-      console.error('Elasticsearch error', err);
-    } finally {
-      setLoading(false);
+      if (res.ok) {
+        const data: ElasticsearchResponse = await res.json();
+        if (data.hits) {
+          setResponse(data);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // Fallback below
     }
+
+    // Client-side Elasticsearch BM25 fallback for static deployment / offline
+    const fallbackResults = searchStaticActs(query, selectedCategory, selectedYear, selectedType);
+    setResponse(fallbackResults);
+    setLoading(false);
   };
 
   useEffect(() => {

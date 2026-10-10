@@ -16,6 +16,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { JournalItem, ScrapedAct, AlgerianCode } from './types/joradp';
+import { getStaticJournalsForYear, STATIC_2026_JOURNALS } from './data/staticJoradp';
 import { FloatingDock, ActiveTab } from './components/FloatingDock';
 import { JournalCard } from './components/JournalCard';
 import { JournalReaderModal } from './components/JournalReaderModal';
@@ -30,11 +31,12 @@ export default function App() {
   const [isDeviceFrame, setIsDeviceFrame] = useState<boolean>(true);
   const [isReleaseModalOpen, setIsReleaseModalOpen] = useState<boolean>(false);
   
-  // Data State
-  const [years, setYears] = useState<number[]>([]);
+  // Data State - Pre-populated with full historical coverage (1962–2026)
+  const defaultYears = Array.from({ length: 2026 - 1962 + 1 }, (_, i) => 2026 - i);
+  const [years, setYears] = useState<number[]>(defaultYears);
   const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [journals, setJournals] = useState<JournalItem[]>([]);
-  const [loadingJournals, setLoadingJournals] = useState<boolean>(true);
+  const [journals, setJournals] = useState<JournalItem[]>(() => getStaticJournalsForYear(2026));
+  const [loadingJournals, setLoadingJournals] = useState<boolean>(false);
   
   // Active Filter Pill in Journals view
   const [activeFilterPill, setActiveFilterPill] = useState<string>('all');
@@ -82,22 +84,31 @@ export default function App() {
   // Load Years
   useEffect(() => {
     fetch('/api/joradp/years')
-      .then(r => r.json())
-      .then(d => {
-        if (d.years) setYears(d.years);
+      .then(async r => {
+        if (!r.ok) throw new Error('Not ok');
+        return r.json();
       })
-      .catch(console.error);
+      .then(d => {
+        if (d.years && d.years.length > 0) setYears(d.years);
+      })
+      .catch(() => {
+        setYears(defaultYears);
+      });
   }, []);
 
   // Load Journals for Selected Year
   const loadJournals = (year: number) => {
-    setLoadingJournals(true);
     fetch(`/api/joradp/journals?year=${year}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.journals) setJournals(d.journals);
+      .then(async r => {
+        if (!r.ok) throw new Error('Not ok');
+        return r.json();
       })
-      .catch(console.error)
+      .then(d => {
+        if (d.journals && d.journals.length > 0) setJournals(d.journals);
+      })
+      .catch(() => {
+        setJournals(getStaticJournalsForYear(year));
+      })
       .finally(() => setLoadingJournals(false));
   };
 
@@ -110,16 +121,21 @@ export default function App() {
     setModalInitialView(initialView);
     try {
       const res = await fetch(`/api/joradp/journal/${j.year}/${j.number}`);
-      const data = await res.json();
-      if (data.journal) {
-        setSelectedJournal(data.journal);
-        setJournals(prev => prev.map(item => item.number === j.number ? data.journal : item));
-        return;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.journal) {
+          setSelectedJournal(data.journal);
+          setJournals(prev => prev.map(item => item.number === j.number ? data.journal : item));
+          return;
+        }
       }
     } catch (e) {
-      console.error(e);
+      console.warn('Backend journal fetch failed, using local journal entry', e);
     }
-    setSelectedJournal(j);
+
+    const staticMatch = j.year === 2026 ? STATIC_2026_JOURNALS.find(item => item.number === j.number) : null;
+    const resolved = staticMatch ? { ...j, ...staticMatch } : j;
+    setSelectedJournal(resolved);
   };
 
   // Handle opening an act directly from Elasticsearch or ObjectBox
@@ -127,17 +143,20 @@ export default function App() {
     setModalInitialView(view);
     try {
       const res = await fetch(`/api/joradp/journal/${year}/${journalNum}`);
-      const data = await res.json();
-      if (data.journal) {
-        setSelectedJournal(data.journal);
-        setSelectedAct(act);
-        return;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.journal) {
+          setSelectedJournal(data.journal);
+          setSelectedAct(act);
+          return;
+        }
       }
     } catch {
       // fallback
     }
 
-    const found = journals.find(j => j.number === journalNum);
+    const staticMatch = year === 2026 ? STATIC_2026_JOURNALS.find(item => item.number === journalNum) : null;
+    const found = journals.find(j => j.number === journalNum) || staticMatch;
     if (found) setSelectedJournal(found);
     setSelectedAct(act);
   };
