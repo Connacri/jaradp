@@ -15,7 +15,7 @@ import {
   Zap,
   ArrowRight
 } from 'lucide-react';
-import { JournalItem, ScrapedAct, AlgerianCode } from './types/joradp';
+import { JournalItem, ScrapedAct, AlgerianCode, RecentHistoryItem } from './types/joradp';
 import { getStaticJournalsForYear, STATIC_2026_JOURNALS } from './data/staticJoradp';
 import { FloatingDock, ActiveTab } from './components/FloatingDock';
 import { JournalCard } from './components/JournalCard';
@@ -57,6 +57,16 @@ export default function App() {
     }
   });
 
+  // Recent History
+  const [recentHistory, setRecentHistory] = useState<RecentHistoryItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('joradp_recent_history');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
   // Save to localStorage
   useEffect(() => {
     try {
@@ -65,6 +75,34 @@ export default function App() {
       console.error(e);
     }
   }, [savedJournals]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('joradp_recent_history', JSON.stringify(recentHistory));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [recentHistory]);
+
+  const addToRecentHistory = (journal: JournalItem) => {
+    if (!journal || !journal.year || !journal.number) return;
+    setRecentHistory(prev => {
+      const filtered = prev.filter(item => !(item.journal.year === journal.year && item.journal.number === journal.number));
+      const newItem: RecentHistoryItem = {
+        journal,
+        viewedAt: new Date().toISOString()
+      };
+      return [newItem, ...filtered].slice(0, 30);
+    });
+  };
+
+  const clearRecentHistory = () => {
+    setRecentHistory([]);
+  };
+
+  const removeRecentHistoryItem = (year: number, number: number) => {
+    setRecentHistory(prev => prev.filter(item => !(item.journal.year === year && item.journal.number === number)));
+  };
 
   const toggleSaveJournal = (journal: JournalItem) => {
     setSavedJournals(prev => {
@@ -119,12 +157,14 @@ export default function App() {
   // Open single journal details
   const handleSelectJournal = async (j: JournalItem, initialView: 'sommaire' | 'pdf' | 'text' = 'sommaire') => {
     setModalInitialView(initialView);
+    addToRecentHistory(j);
     try {
       const res = await fetch(`/api/joradp/journal/${j.year}/${j.number}`);
       if (res.ok) {
         const data = await res.json();
         if (data.journal) {
           setSelectedJournal(data.journal);
+          addToRecentHistory(data.journal);
           setJournals(prev => prev.map(item => item.number === j.number ? data.journal : item));
           return;
         }
@@ -136,6 +176,7 @@ export default function App() {
     const staticMatch = j.year === 2026 ? STATIC_2026_JOURNALS.find(item => item.number === j.number) : null;
     const resolved = staticMatch ? { ...j, ...staticMatch } : j;
     setSelectedJournal(resolved);
+    addToRecentHistory(resolved);
   };
 
   // Handle opening an act directly from Elasticsearch or ObjectBox
@@ -148,6 +189,7 @@ export default function App() {
         if (data.journal) {
           setSelectedJournal(data.journal);
           setSelectedAct(act);
+          addToRecentHistory(data.journal);
           return;
         }
       }
@@ -157,7 +199,10 @@ export default function App() {
 
     const staticMatch = year === 2026 ? STATIC_2026_JOURNALS.find(item => item.number === journalNum) : null;
     const found = journals.find(j => j.number === journalNum) || staticMatch;
-    if (found) setSelectedJournal(found);
+    if (found) {
+      setSelectedJournal(found);
+      addToRecentHistory(found);
+    }
     setSelectedAct(act);
   };
 
@@ -447,12 +492,15 @@ export default function App() {
             <CodesView onSelectCode={handleSelectCode} />
           )}
 
-          {/* VIEW: 5. SAVED / BOOKMARKS */}
+          {/* VIEW: 5. SAVED / BOOKMARKS & RECENT HISTORY */}
           {activeTab === 'favorites' && (
             <FavoritesView
               savedJournals={savedJournals}
-              onSelectJournal={(j) => handleSelectJournal(j, 'sommaire')}
+              recentHistory={recentHistory}
+              onSelectJournal={(j, view = 'sommaire') => handleSelectJournal(j, view)}
               onRemoveSave={toggleSaveJournal}
+              onClearHistory={clearRecentHistory}
+              onRemoveHistoryItem={removeRecentHistoryItem}
             />
           )}
         </div>

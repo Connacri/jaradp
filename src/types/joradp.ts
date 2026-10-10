@@ -29,6 +29,11 @@ export interface JournalItem {
   scrapedAt?: string;
 }
 
+export interface RecentHistoryItem {
+  journal: JournalItem;
+  viewedAt: string;
+}
+
 export interface AlgerianCode {
   id: string;
   title: string;
