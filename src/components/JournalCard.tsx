@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, FileText, Bookmark, Check, Sparkles, Activity, MoreHorizontal, ArrowUpRight } from 'lucide-react';
+import { Download, FileText, Bookmark, Check, Sparkles, Activity, MoreHorizontal, ArrowUpRight, Eye } from 'lucide-react';
 import { JournalItem, ScrapedAct } from '../types/joradp';
 
 interface JournalCardProps {
@@ -7,6 +7,7 @@ interface JournalCardProps {
   theme?: 'light' | 'dark';
   onSelect: (journal: JournalItem) => void;
   onSelectAct?: (act: ScrapedAct, journal: JournalItem) => void;
+  onOpenPdf?: (journal: JournalItem) => void;
   isSaved?: boolean;
   onToggleSave?: (journal: JournalItem) => void;
   sealImageUrl?: string;
@@ -17,6 +18,7 @@ export const JournalCard: React.FC<JournalCardProps> = ({
   theme = 'light',
   onSelect,
   onSelectAct,
+  onOpenPdf,
   isSaved = false,
   onToggleSave,
   sealImageUrl = '/src/assets/images/legal_seal_badge_1791621609263.jpg'
@@ -192,18 +194,22 @@ export const JournalCard: React.FC<JournalCardProps> = ({
           </span>
 
           <div className="flex items-center gap-2">
-            <a
-              href={journal.localPdfProxyUrl}
-              download={`JORADP_${journal.year}_N${journal.numberPadded}.pdf`}
-              onClick={(e) => e.stopPropagation()}
-              className={`inline-flex items-center gap-1 font-semibold hover:underline ${
-                isDark ? 'text-neutral-200' : 'text-neutral-900'
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onOpenPdf) onOpenPdf(journal);
+                else onSelect(journal);
+              }}
+              className={`inline-flex items-center gap-1 font-bold px-2.5 py-1 rounded-full text-xs transition-colors shadow-2xs ${
+                isDark 
+                  ? 'bg-neutral-800 text-neutral-100 hover:bg-neutral-700 border border-neutral-700' 
+                  : 'bg-white text-neutral-900 border border-neutral-300 hover:bg-neutral-100'
               }`}
-              title="Télécharger le PDF original"
+              title="Visualiser le PDF directement dans l'application"
             >
-              <Download className="w-3 h-3" />
-              <span>PDF</span>
-            </a>
+              <Eye className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Voir PDF</span>
+            </button>
 
             <span className="text-neutral-300 dark:text-neutral-700">·</span>
 
@@ -212,7 +218,7 @@ export const JournalCard: React.FC<JournalCardProps> = ({
                 isDark ? 'text-white' : 'text-neutral-950'
               }`}
             >
-              <span>Consulter</span>
+              <span>Détails</span>
               <ArrowUpRight className="w-3 h-3" />
             </span>
           </div>

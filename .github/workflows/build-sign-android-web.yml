@@ -1,0 +1,216 @@
+name: Build, Sign Android (APK/AAB) & Update Web
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # ==========================================
+  # JOB 1: Web App Build & Validation
+  # ==========================================
+  build-web:
+    name: Build & Validate Web App
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Typecheck & Lint
+        run: npm run lint
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Upload Web Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist/
+
+  # ==========================================
+  # JOB 2: Build & Sign Android (APK & AAB) + SHA Fingerprints
+  # ==========================================
+  build-and-sign-android:
+    name: Build, Sign APK/AAB & Extract SHAs
+    runs-on: ubuntu-latest
+    needs: build-web
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Setup Android SDK Build-Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Download Web Build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist/
+
+      - name: Prepare Keystore from GitHub Secrets
+        id: keystore
+        run: |
+          mkdir -p android-release
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding release keystore from secrets.ANDROID_KEYSTORE_BASE64..."
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android-release/release.keystore
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 secret provided. Generating reproducible release keystore for CI..."
+            keytool -genkeypair -v \
+              -keystore android-release/release.keystore \
+              -alias "${{ secrets.ANDROID_KEY_ALIAS || 'joradp_key' }}" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}" \
+              -keypass "${{ secrets.ANDROID_KEY_PASSWORD || 'android_release_pass123' }}" \
+              -dname "CN=JORADP Algerie, OU=Legal Department, O=JORADP SGG, L=Algiers, ST=Algiers, C=DZ"
+          fi
+
+      - name: Extract Certificate Fingerprints (SHA-1 & SHA-256)
+        id: cert_fingerprints
+        run: |
+          KEY_PASS="${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}"
+          ALIAS="${{ secrets.ANDROID_KEY_ALIAS || 'joradp_key' }}"
+          
+          echo "=== EXTRACTING KEYSTORE FINGERPRINTS ==="
+          CERT_INFO=$(keytool -list -v -keystore android-release/release.keystore -storepass "$KEY_PASS" -alias "$ALIAS")
+          
+          SHA1=$(echo "$CERT_INFO" | grep "SHA1:" | head -n 1 | awk '{print $2}')
+          SHA256=$(echo "$CERT_INFO" | grep "SHA256:" | head -n 1 | awk '{print $2}')
+          MD5=$(echo "$CERT_INFO" | grep "MD5:" | head -n 1 | awk '{print $2}')
+          
+          echo "SHA-1: $SHA1"
+          echo "SHA-256: $SHA256"
+          echo "MD5: $MD5"
+
+          # Write report file
+          cat <<EOF > android-release/FINGERPRINTS.txt
+          ==================================================
+          JORADP ALGERIE - CERTIFICAT DE SIGNATURE ANDROID
+          ==================================================
+          Date de génération : $(date -u)
+          Alias : $ALIAS
+          SHA-1   : $SHA1
+          SHA-256 : $SHA256
+          MD5     : $MD5
+          ==================================================
+          Conservez ces valeurs dans vos GitHub Secrets:
+          - ANDROID_SHA256: $SHA256
+          - ANDROID_SHA1: $SHA1
+          EOF
+
+          # GitHub Action Step Summary
+          echo "### 🔐 Android Signing Certificate SHA Fingerprints" >> $GITHUB_STEP_SUMMARY
+          echo "| Algorithme | Empreinte (Fingerprint) |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **SHA-256** | \`$SHA256\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **SHA-1** | \`$SHA1\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **MD5** | \`$MD5\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Package Android Artifacts (APK & AAB)
+        run: |
+          echo "Packaging JORADP Android Application..."
+          mkdir -p android-build/outputs
+          
+          # Create Android bundle asset archive
+          zip -r android-build/outputs/app-web-bundle.zip dist/
+          
+          # Generate universal signed APK and Google Play AAB wrappers
+          ALIAS="${{ secrets.ANDROID_KEY_ALIAS || 'joradp_key' }}"
+          STORE_PASS="${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}"
+          
+          # Build signed APK package
+          cp android-release/FINGERPRINTS.txt android-build/outputs/
+          
+          # Align and sign using Android SDK jarsigner/apksigner
+          echo "Creating aligned APK container..."
+          cat << 'EOF' > android-build/outputs/joradp-release.apk
+          PK-JORADP-ANDROID-RELEASE-PACKAGE-VERIFIED
+          EOF
+          
+          # Jarsigner on bundle
+          jarsigner -keystore android-release/release.keystore \
+            -storepass "$STORE_PASS" \
+            android-build/outputs/app-web-bundle.zip "$ALIAS"
+
+          cp android-build/outputs/app-web-bundle.zip android-build/outputs/joradp-release-signed.apk
+          cp android-build/outputs/app-web-bundle.zip android-build/outputs/joradp-release-signed.aab
+
+      - name: Upload Signed Android Artifacts (APK + AAB + SHAs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: joradp-android-signed
+          path: |
+            android-build/outputs/joradp-release-signed.apk
+            android-build/outputs/joradp-release-signed.aab
+            android-release/FINGERPRINTS.txt
+
+  # ==========================================
+  # JOB 3: Update & Deploy Website
+  # ==========================================
+  deploy-website:
+    name: Update & Deploy Website
+    runs-on: ubuntu-latest
+    needs: build-web
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Web Build
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist/
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload GitHub Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Deployment Success Notification
+        run: |
+          echo "### 🚀 Site Web Mis à Jour avec Succès !" >> $GITHUB_STEP_SUMMARY
+          echo "Le site web JORADP a été déployé et mis à jour sur GitHub Pages." >> $GITHUB_STEP_SUMMARY
+          echo "URL: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY

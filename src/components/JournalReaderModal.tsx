@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { X, Download, Bookmark, Share2, FileText, Search, ExternalLink, Scale, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Download, Bookmark, Share2, FileText, Search, Scale, Check, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import { JournalItem, ScrapedAct } from '../types/joradp';
+import { InAppPdfViewer } from './InAppPdfViewer';
 
 interface JournalReaderModalProps {
   journal: JournalItem | null;
   initialAct?: ScrapedAct | null;
+  initialView?: 'sommaire' | 'pdf' | 'text';
   onClose: () => void;
   isSaved: boolean;
   onToggleSave: (journal: JournalItem) => void;
@@ -13,16 +15,24 @@ interface JournalReaderModalProps {
 export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
   journal,
   initialAct,
+  initialView = 'sommaire',
   onClose,
   isSaved,
   onToggleSave
 }) => {
   if (!journal) return null;
 
-  const [activeView, setActiveView] = useState<'sommaire' | 'pdf' | 'text'>('sommaire');
+  const [activeView, setActiveView] = useState<'sommaire' | 'pdf' | 'text'>(initialView);
   const [searchWord, setSearchWord] = useState('');
   const [copied, setCopied] = useState(false);
   const [selectedAct, setSelectedAct] = useState<ScrapedAct | null>(initialAct || null);
+  const [targetPdfPage, setTargetPdfPage] = useState<number>(initialAct?.page || 1);
+
+  // Sync initial view and page when journal or initialAct changes
+  React.useEffect(() => {
+    if (initialView) setActiveView(initialView);
+    if (initialAct?.page) setTargetPdfPage(initialAct.page);
+  }, [initialView, initialAct, journal]);
 
   const acts = journal.acts || [];
 
@@ -46,6 +56,11 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
       (act.fullTextPreview && act.fullTextPreview.toLowerCase().includes(q))
     );
   });
+
+  const handleOpenPdfAtPage = (page = 1) => {
+    setTargetPdfPage(page);
+    setActiveView('pdf');
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
@@ -203,10 +218,11 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
                       {copied ? 'Copié !' : 'Copier la référence juridique'}
                     </button>
                     <button
-                      onClick={() => setActiveView('pdf')}
-                      className="text-xs font-bold text-white hover:underline flex items-center gap-1"
+                      onClick={() => handleOpenPdfAtPage(selectedAct.page || 1)}
+                      className="text-xs font-bold text-white hover:underline flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 transition-colors"
                     >
-                      Voir dans le PDF <ExternalLink className="w-3.5 h-3.5" />
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Lire page {selectedAct.page || 1} dans l'app</span>
                     </button>
                   </div>
                 </div>
@@ -254,11 +270,23 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
                             {act.title}
                           </h4>
                         </div>
-                        {act.page && (
-                          <span className="text-xs font-mono font-bold text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded-md shrink-0">
-                            p. {act.page}
-                          </span>
-                        )}
+                        
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {act.page && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedAct(act);
+                                handleOpenPdfAtPage(act.page);
+                              }}
+                              className="text-xs font-mono font-bold text-neutral-700 dark:text-neutral-200 bg-neutral-200/80 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
+                              title={`Aller à la page ${act.page} du PDF`}
+                            >
+                              <Eye className="w-3 h-3 text-neutral-500" />
+                              <span>p. {act.page}</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -267,28 +295,15 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: EMBEDDED PDF VIEWER */}
+          {/* TAB 2: NATIVE IN-APP PDF VIEWER (Canvas-based, no external tab or plugin) */}
           {activeView === 'pdf' && (
-            <div className="w-full h-full min-h-[500px] flex flex-col rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-950">
-              <div className="p-3 bg-neutral-200/70 dark:bg-neutral-800 flex items-center justify-between text-xs">
-                <span className="font-semibold text-neutral-700 dark:text-neutral-300">
-                  Document officiel original : JORADP {journal.year} N° {journal.number}
-                </span>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={journal.localPdfProxyUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-bold text-neutral-900 dark:text-white hover:underline"
-                  >
-                    Ouvrir en plein écran <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              </div>
-              <iframe
-                src={`${journal.localPdfProxyUrl}#toolbar=1&navpanes=1`}
-                className="w-full flex-1 h-[600px] border-0"
-                title={`PDF JORADP ${journal.year} N° ${journal.number}`}
+            <div className="w-full h-full min-h-[550px] flex flex-col">
+              <InAppPdfViewer
+                pdfUrl={journal.localPdfProxyUrl}
+                initialPage={targetPdfPage}
+                title={`JORADP ${journal.year} · N° ${journal.number}`}
+                year={journal.year}
+                number={journal.number}
               />
             </div>
           )}

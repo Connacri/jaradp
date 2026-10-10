@@ -40,6 +40,7 @@ export default function App() {
   // Modals & Reader
   const [selectedJournal, setSelectedJournal] = useState<JournalItem | null>(null);
   const [selectedAct, setSelectedAct] = useState<ScrapedAct | null>(null);
+  const [modalInitialView, setModalInitialView] = useState<'sommaire' | 'pdf' | 'text'>('sommaire');
   const [searchInitialCategory, setSearchInitialCategory] = useState<string>('');
   
   // Bookmarks / Saved
@@ -103,7 +104,8 @@ export default function App() {
   }, [selectedYear]);
 
   // Open single journal details
-  const handleSelectJournal = async (j: JournalItem) => {
+  const handleSelectJournal = async (j: JournalItem, initialView: 'sommaire' | 'pdf' | 'text' = 'sommaire') => {
+    setModalInitialView(initialView);
     try {
       const res = await fetch(`/api/joradp/journal/${j.year}/${j.number}`);
       const data = await res.json();
@@ -119,7 +121,8 @@ export default function App() {
   };
 
   // Handle opening an act directly from Elasticsearch or ObjectBox
-  const handleSelectAct = async (act: ScrapedAct, year: number, journalNum: number) => {
+  const handleSelectAct = async (act: ScrapedAct, year: number, journalNum: number, view: 'sommaire' | 'pdf' = 'sommaire') => {
+    setModalInitialView(view);
     try {
       const res = await fetch(`/api/joradp/journal/${year}/${journalNum}`);
       const data = await res.json();
@@ -139,6 +142,7 @@ export default function App() {
 
   // Handle selecting a landmark code
   const handleSelectCode = (code: AlgerianCode) => {
+    setModalInitialView('pdf');
     const pseudoJournal: JournalItem = {
       year: parseInt(code.journalRef.match(/\d{4}/)?.[0] || '2020'),
       number: parseInt(code.journalRef.match(/N°\s*(\d+)/)?.[1] || '1'),
@@ -374,8 +378,9 @@ export default function App() {
                         key={`${journal.year}-${journal.number}`}
                         journal={journal}
                         theme={cardTheme}
-                        onSelect={handleSelectJournal}
-                        onSelectAct={(act) => handleSelectAct(act, journal.year, journal.number)}
+                        onSelect={(j) => handleSelectJournal(j, 'sommaire')}
+                        onOpenPdf={(j) => handleSelectJournal(j, 'pdf')}
+                        onSelectAct={(act) => handleSelectAct(act, journal.year, journal.number, 'sommaire')}
                         isSaved={isJournalSaved(journal)}
                         onToggleSave={toggleSaveJournal}
                       />
@@ -389,7 +394,7 @@ export default function App() {
           {/* VIEW: 2. ELASTICSEARCH ADVANCED SEARCH BAR */}
           {activeTab === 'search' && (
             <ElasticsearchBar
-              onSelectResult={handleSelectAct}
+              onSelectResult={(act, yr, num) => handleSelectAct(act, yr, num, 'pdf')}
               initialCategory={searchInitialCategory}
             />
           )}
@@ -401,7 +406,7 @@ export default function App() {
                 setSearchInitialCategory(catName);
                 setActiveTab('search');
               }}
-              onSelectAct={handleSelectAct}
+              onSelectAct={(act, yr, num) => handleSelectAct(act, yr, num, 'pdf')}
             />
           )}
 
@@ -414,7 +419,7 @@ export default function App() {
           {activeTab === 'favorites' && (
             <FavoritesView
               savedJournals={savedJournals}
-              onSelectJournal={handleSelectJournal}
+              onSelectJournal={(j) => handleSelectJournal(j, 'sommaire')}
               onRemoveSave={toggleSaveJournal}
             />
           )}
@@ -435,6 +440,7 @@ export default function App() {
       <JournalReaderModal
         journal={selectedJournal}
         initialAct={selectedAct}
+        initialView={modalInitialView}
         onClose={() => {
           setSelectedJournal(null);
           setSelectedAct(null);
