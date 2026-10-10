@@ -31,7 +31,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
@@ -70,7 +69,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install Node Dependencies
         run: npm install --legacy-peer-deps
@@ -195,15 +193,13 @@ jobs:
           fi
 
           cp android-release/FINGERPRINTS.txt android-build/outputs/
+          echo "✅ Compilation Gradle terminée."
 
-          # Vérification formelle de la signature Android avec apksigner / jarsigner
-          echo "=== VÉRIFICATION DE L'INTÉGRITÉ DU PACKAGE APK ==="
-          if command -v apksigner &> /dev/null; then
-            apksigner verify --verbose android-build/outputs/joradp-release-signed.apk
-          else
-            jarsigner -verify -verbose -certs android-build/outputs/joradp-release-signed.apk
-          fi
-          echo "✅ Package Android APK et AAB officiellement certifiés et prêts à l'installation !"
+      # Validation cryptographique stricte V1 / V2 via apksigner
+      - name: Verify APK Signatures (apksigner verify V1 & V2)
+        run: |
+          chmod +x scripts/verify-apk-signature.sh
+          ./scripts/verify-apk-signature.sh android-build/outputs/joradp-release-signed.apk
 
       - name: Upload Signed Android Artifacts
         uses: actions/upload-artifact@v4

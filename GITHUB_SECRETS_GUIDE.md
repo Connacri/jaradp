@@ -78,9 +78,22 @@ Le script va :
    - Récupère votre keystore depuis `secrets.ANDROID_KEYSTORE_BASE64`.
    - Extrait les empreintes SHA-256 / SHA-1 et les affiche dans le **Résumé de l'exécution (GitHub Step Summary)**.
    - Compile et signe l'**APK** universel et le bundle **AAB** pour Google Play.
-   - Vérifie cryptographiquement la signature avec `jarsigner -verify`.
+   - Valide cryptographiquement l'intégrité et les signatures V1/V2 via `scripts/verify-apk-signature.sh` (`apksigner verify --verbose`).
 3. **`deploy-website`** :
    - Déploie automatiquement la version web sur **GitHub Pages**.
 4. **`publish-github-release`** :
    - Crée une nouvelle Release GitHub officielle taguée `v1.0.<run_number>`.
-   - Attache les fichiers téléchargeables : `joradp-release-signed.apk`, `joradp-release-signed.aab`, et `FINGERPRINTS.txt`.
+   - Attache les fichiers téléchargeables certifiés : `joradp-release-signed.apk`, `joradp-release-signed.aab`, et `FINGERPRINTS.txt`.
+
+---
+
+## 🔍 5. Vérifier la signature d'un APK localement
+
+Vous pouvez également vérifier n'importe quel APK téléchargé sur votre machine :
+
+```bash
+chmod +x scripts/verify-apk-signature.sh
+./scripts/verify-apk-signature.sh android-build/outputs/joradp-release-signed.apk
+```
+
+Le script confirme l'activation du schéma **V2 (APK Signature Scheme v2)** indispensable pour Android 11+ et affiche les empreintes SHA associées.
