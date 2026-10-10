@@ -69,9 +69,6 @@ jobs:
           distribution: 'temurin'
           java-version: 17
 
-      - name: Setup Android SDK Build-Tools
-        uses: android-actions/setup-android@v3
-
       - name: Download Web Build
         uses: actions/download-artifact@v4
         with:
