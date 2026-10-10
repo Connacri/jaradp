@@ -101,6 +101,22 @@ export const ElasticsearchBar: React.FC<ElasticsearchBarProps> = ({
     setQuery('');
   };
 
+  const renderHighlighted = (htmlOrText: string) => {
+    if (!htmlOrText) return null;
+    const parts = htmlOrText.split(/(<mark[^>]*>.*?<\/mark>)/gi);
+    return parts.map((part, idx) => {
+      if (part.toLowerCase().startsWith('<mark')) {
+        const content = part.replace(/<mark[^>]*>/i, '').replace(/<\/mark>/i, '');
+        return (
+          <mark key={idx} className="bg-amber-200 dark:bg-amber-900/60 text-neutral-900 dark:text-amber-200 font-semibold px-0.5 rounded">
+            {content}
+          </mark>
+        );
+      }
+      return <span key={idx}>{part}</span>;
+    });
+  };
+
   const hasActiveFilters = !!(selectedCategory || selectedYear || selectedType || query);
 
   return (
@@ -351,12 +367,9 @@ export const ElasticsearchBar: React.FC<ElasticsearchBarProps> = ({
               </div>
 
               {/* Title with Highlighted Terms */}
-              <h3 
-                className="text-sm font-bold text-neutral-950 dark:text-white leading-snug"
-                dangerouslySetInnerHTML={{
-                  __html: hit.highlight?.title || act.title
-                }}
-              />
+              <h3 className="text-sm font-bold text-neutral-950 dark:text-white leading-snug">
+                {renderHighlighted(hit.highlight?.title || act.title)}
+              </h3>
 
               {act.ministere && (
                 <p className="text-xs text-neutral-500 font-medium mt-1">
@@ -366,12 +379,9 @@ export const ElasticsearchBar: React.FC<ElasticsearchBarProps> = ({
 
               {/* Matched Snippet Preview */}
               {hit.highlight?.snippet && (
-                <div 
-                  className="mt-2.5 p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200/60 dark:border-neutral-700/50 text-xs font-mono text-neutral-700 dark:text-neutral-300 leading-relaxed"
-                  dangerouslySetInnerHTML={{
-                    __html: hit.highlight.snippet
-                  }}
-                />
+                <div className="mt-2.5 p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200/60 dark:border-neutral-700/50 text-xs font-mono text-neutral-700 dark:text-neutral-300 leading-relaxed">
+                  {renderHighlighted(hit.highlight.snippet)}
+                </div>
               )}
             </div>
           );

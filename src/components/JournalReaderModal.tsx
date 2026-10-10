@@ -20,8 +20,6 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
   isSaved,
   onToggleSave
 }) => {
-  if (!journal) return null;
-
   const [activeView, setActiveView] = useState<'sommaire' | 'pdf' | 'text'>(initialView);
   const [searchWord, setSearchWord] = useState('');
   const [copied, setCopied] = useState(false);
@@ -33,6 +31,8 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
     if (initialView) setActiveView(initialView);
     if (initialAct?.page) setTargetPdfPage(initialAct.page);
   }, [initialView, initialAct, journal]);
+
+  if (!journal) return null;
 
   const acts = journal.acts || [];
 

@@ -437,17 +437,19 @@ export default function App() {
       />
 
       {/* Reader Modal */}
-      <JournalReaderModal
-        journal={selectedJournal}
-        initialAct={selectedAct}
-        initialView={modalInitialView}
-        onClose={() => {
-          setSelectedJournal(null);
-          setSelectedAct(null);
-        }}
-        isSaved={selectedJournal ? isJournalSaved(selectedJournal) : false}
-        onToggleSave={toggleSaveJournal}
-      />
+      {selectedJournal && (
+        <JournalReaderModal
+          journal={selectedJournal}
+          initialAct={selectedAct}
+          initialView={modalInitialView}
+          onClose={() => {
+            setSelectedJournal(null);
+            setSelectedAct(null);
+          }}
+          isSaved={isJournalSaved(selectedJournal)}
+          onToggleSave={toggleSaveJournal}
+        />
+      )}
     </div>
   );
 }

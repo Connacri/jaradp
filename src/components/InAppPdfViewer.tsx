@@ -12,8 +12,9 @@ import {
   FileText, 
   Layers, 
   RefreshCw,
-  Search,
-  Check
+  Check,
+  Maximize,
+  StretchHorizontal
 } from 'lucide-react';
 
 // Setup worker
@@ -40,17 +41,55 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(initialPage);
   const [numPages, setNumPages] = useState<number>(0);
-  const [scale, setScale] = useState<number>(1.15);
+  
+  // Default to Fit-to-Width (Ajusté à la largeur de l'écran)
+  const [isFitToWidth, setIsFitToWidth] = useState<boolean>(true);
+  const [scale, setScale] = useState<number>(1.0);
+  const [effectiveScale, setEffectiveScale] = useState<number>(1.0);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
   const [rotation, setRotation] = useState<number>(0);
+  
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [pageInput, setPageInput] = useState<string>(String(initialPage));
   const [showThumbnails, setShowThumbnails] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [rendering, setRendering] = useState<boolean>(false);
+
+  // Monitor container width dynamically for responsive Fit-to-Width
+  useEffect(() => {
+    const updateWidth = () => {
+      if (viewportRef.current) {
+        setContainerWidth(viewportRef.current.clientWidth);
+      } else if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      } else {
+        setContainerWidth(window.innerWidth);
+      }
+    };
+
+    updateWidth();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateWidth();
+    });
+
+    if (viewportRef.current) {
+      resizeObserver.observe(viewportRef.current);
+    }
+
+    window.addEventListener('resize', updateWidth);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateWidth);
+    };
+  }, [showThumbnails, isFullscreen]);
 
   // Load PDF Document
   useEffect(() => {
@@ -88,7 +127,7 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
     };
   }, [pdfUrl, initialPage]);
 
-  // Render Current Page onto Canvas
+  // Render Current Page onto Canvas (Fitted to screen width)
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
 
@@ -103,11 +142,22 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const viewport = page.getViewport({ scale, rotation });
+        // Calculate scale to fit container width perfectly
+        let activeScale = scale;
+        if (isFitToWidth) {
+          const unscaledViewport = page.getViewport({ scale: 1.0, rotation });
+          const availableWidth = Math.max(260, (containerWidth || window.innerWidth) - 24);
+          activeScale = availableWidth / unscaledViewport.width;
+          setEffectiveScale(activeScale);
+        } else {
+          setEffectiveScale(scale);
+        }
+
+        const viewport = page.getViewport({ scale: activeScale, rotation });
         const context = canvas.getContext('2d');
         if (!context) return;
 
-        // Support high DPI screens
+        // High DPI sharpness support
         const outputScale = window.devicePixelRatio || 1;
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
@@ -139,7 +189,7 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [pdfDoc, currentPage, scale, rotation]);
+  }, [pdfDoc, currentPage, scale, isFitToWidth, containerWidth, rotation]);
 
   const goToPage = (p: number) => {
     const pageNum = Math.max(1, Math.min(numPages, p));
@@ -157,8 +207,20 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
     }
   };
 
-  const zoomIn = () => setScale(prev => Math.min(prev + 0.2, 2.5));
-  const zoomOut = () => setScale(prev => Math.max(prev - 0.2, 0.6));
+  const zoomIn = () => {
+    setIsFitToWidth(false);
+    setScale(prev => Math.min(prev + 0.15, 2.5));
+  };
+
+  const zoomOut = () => {
+    setIsFitToWidth(false);
+    setScale(prev => Math.max(prev - 0.15, 0.5));
+  };
+
+  const toggleFitToWidth = () => {
+    setIsFitToWidth(prev => !prev);
+  };
+
   const rotate = () => setRotation(prev => (prev + 90) % 360);
 
   const downloadFile = (e: React.MouseEvent) => {
@@ -179,21 +241,21 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
       }`}
     >
       {/* Top Application Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-950 border-b border-neutral-800 shrink-0 text-xs">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2 bg-neutral-950 border-b border-neutral-800 shrink-0 text-xs">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
-          <span className="font-bold text-neutral-200 truncate max-w-[200px] sm:max-w-xs">
-            {title || `Journal Officiel ${year ? `${year} · N° ${number}` : ''}`}
+          <span className="font-bold text-neutral-200 truncate max-w-[150px] sm:max-w-xs">
+            {title || `JORADP ${year ? `${year} · N° ${number}` : ''}`}
           </span>
           {numPages > 0 && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-mono">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-mono hidden sm:inline">
               {numPages} pages
             </span>
           )}
         </div>
 
         {/* Center / Navigation Controls */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => goToPage(currentPage - 1)}
             disabled={currentPage <= 1}
@@ -210,10 +272,10 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
               value={pageInput}
               onChange={(e) => setPageInput(e.target.value)}
               onBlur={() => setPageInput(String(currentPage))}
-              className="w-10 text-center py-1 bg-neutral-800 rounded font-mono font-bold text-xs focus:ring-1 focus:ring-white border border-neutral-700"
+              className="w-9 sm:w-11 text-center py-1 bg-neutral-800 rounded font-mono font-bold text-xs focus:ring-1 focus:ring-white border border-neutral-700"
               aria-label="Numéro de page"
             />
-            <span className="text-neutral-500 font-mono">/ {numPages || '...'}</span>
+            <span className="text-neutral-500 font-mono text-[11px]">/ {numPages || '...'}</span>
           </form>
 
           <button
@@ -227,34 +289,44 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
           </button>
         </div>
 
-        {/* Right Action Tools */}
+        {/* Right Action Tools: Fit to Width & Zoom */}
         <div className="flex items-center gap-1">
+          {/* Fit To Width Toggle Button */}
+          <button
+            onClick={toggleFitToWidth}
+            className={`px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 border ${
+              isFitToWidth 
+                ? 'bg-emerald-500 text-neutral-950 border-emerald-400 shadow-sm' 
+                : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+            }`}
+            title="Ajuster le PDF à la largeur de l'écran"
+          >
+            <StretchHorizontal className="w-3.5 h-3.5" />
+            <span className="text-[11px] hidden sm:inline">Ajuster</span>
+          </button>
+
           <button
             onClick={zoomOut}
             className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition-colors"
             title="Zoom arrière"
           >
-            <ZoomOut className="w-4 h-4" />
+            <ZoomOut className="w-3.5 h-3.5" />
           </button>
-
-          <span className="text-[11px] font-mono text-neutral-400 min-w-[38px] text-center">
-            {Math.round(scale * 100)}%
-          </span>
 
           <button
             onClick={zoomIn}
             className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition-colors"
             title="Zoom avant"
           >
-            <ZoomIn className="w-4 h-4" />
+            <ZoomIn className="w-3.5 h-3.5" />
           </button>
 
           <button
             onClick={rotate}
-            className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition-colors"
+            className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition-colors hidden sm:inline-flex"
             title="Pivoter de 90°"
           >
-            <RotateCw className="w-4 h-4" />
+            <RotateCw className="w-3.5 h-3.5" />
           </button>
 
           <button
@@ -262,9 +334,9 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
             className={`p-1.5 rounded-lg transition-colors ${
               showThumbnails ? 'bg-white text-neutral-950 font-bold' : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300'
             }`}
-            title="Afficher les miniatures"
+            title="Afficher les miniatures des pages"
           >
-            <Layers className="w-4 h-4" />
+            <Layers className="w-3.5 h-3.5" />
           </button>
 
           <button
@@ -272,24 +344,24 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
             className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition-colors"
             title="Télécharger le fichier PDF"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
           </button>
 
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
             className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition-colors"
-            title={isFullscreen ? 'Quitter le plein écran' : 'Plein écran dans l\'application'}
+            title={isFullscreen ? 'Quitter le plein écran' : 'Plein écran'}
           >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
 
-      {/* Main Viewing Body */}
+      {/* Main Viewing Body with full responsive width */}
       <div className="flex-1 relative flex overflow-hidden bg-neutral-950">
         {/* Thumbnails Sidebar */}
         {showThumbnails && numPages > 0 && (
-          <div className="w-28 sm:w-36 bg-neutral-900 border-r border-neutral-800 overflow-y-auto p-2 space-y-2 shrink-0 animate-in slide-in-from-left-2">
+          <div className="w-24 sm:w-32 bg-neutral-900 border-r border-neutral-800 overflow-y-auto p-2 space-y-2 shrink-0 animate-in slide-in-from-left-2">
             <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 px-1 mb-1">
               Pages ({numPages})
             </div>
@@ -303,24 +375,27 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
                     : 'bg-neutral-800/80 text-neutral-300 hover:bg-neutral-800'
                 }`}
               >
-                <span>Page {pageNum}</span>
+                <span>p. {pageNum}</span>
                 {currentPage === pageNum && <Check className="w-3 h-3 text-emerald-600" />}
               </button>
             ))}
           </div>
         )}
 
-        {/* Center Canvas Viewport */}
-        <div className="flex-1 overflow-auto flex items-center justify-center p-4 min-h-[480px]">
+        {/* Center Canvas Viewport - Fitted to Width */}
+        <div 
+          ref={viewportRef}
+          className="flex-1 overflow-x-hidden overflow-y-auto flex flex-col items-center justify-start p-2 sm:p-4 min-h-[480px] w-full"
+        >
           {loading && (
-            <div className="flex flex-col items-center justify-center text-neutral-400 py-16 space-y-3">
+            <div className="flex flex-col items-center justify-center text-neutral-400 py-20 space-y-3">
               <RefreshCw className="w-8 h-8 animate-spin text-white" />
-              <p className="text-xs font-semibold">Chargement du PDF officiel dans l'application...</p>
+              <p className="text-xs font-semibold">Chargement et ajustement du PDF à la largeur de l'écran...</p>
             </div>
           )}
 
           {error && (
-            <div className="p-6 rounded-2xl bg-neutral-900 border border-neutral-800 text-center max-w-md">
+            <div className="p-6 rounded-2xl bg-neutral-900 border border-neutral-800 text-center max-w-md my-auto">
               <FileText className="w-10 h-10 mx-auto text-rose-500 mb-2 opacity-80" />
               <h4 className="text-sm font-bold text-white mb-1">Erreur d'affichage PDF</h4>
               <p className="text-xs text-neutral-400 mb-4">{error}</p>
@@ -333,10 +408,10 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
             </div>
           )}
 
-          <div className={`relative transition-opacity duration-200 ${rendering ? 'opacity-70' : 'opacity-100'} ${loading || error ? 'hidden' : 'block'}`}>
+          <div className={`w-full flex justify-center transition-opacity duration-150 ${rendering ? 'opacity-80' : 'opacity-100'} ${loading || error ? 'hidden' : 'block'}`}>
             <canvas 
               ref={canvasRef} 
-              className="shadow-2xl rounded-lg mx-auto bg-white border border-neutral-700/60"
+              className="shadow-2xl rounded-lg bg-white border border-neutral-700/60 max-w-full block"
             />
           </div>
         </div>
@@ -344,8 +419,11 @@ export const InAppPdfViewer: React.FC<InAppPdfViewerProps> = ({
 
       {/* Bottom Status bar */}
       <div className="px-4 py-2 bg-neutral-950 border-t border-neutral-800 flex items-center justify-between text-[11px] text-neutral-400 shrink-0 font-mono">
-        <span>Visionneuse Canvas Native (Pas d'onglet externe)</span>
-        <span>Page {currentPage} de {numPages}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          <span>{isFitToWidth ? 'Mode : Ajusté à la largeur de l\'écran' : `Zoom manuel : ${Math.round(effectiveScale * 100)}%`}</span>
+        </span>
+        <span>Page {currentPage} sur {numPages}</span>
       </div>
     </div>
   );

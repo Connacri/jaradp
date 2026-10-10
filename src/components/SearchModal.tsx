@@ -20,8 +20,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   onClose,
   onSelectResult
 }) => {
-  if (!isOpen) return null;
-
   const [query, setQuery] = useState('');
   const [selectedNature, setSelectedNature] = useState('');
   const [selectedMinistere, setSelectedMinistere] = useState('');
@@ -58,6 +56,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   ];
 
   const handleSearch = async () => {
+    if (!isOpen) return;
     setLoading(true);
     setHasSearched(true);
     try {
@@ -79,11 +78,14 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   };
 
   useEffect(() => {
+    if (!isOpen) return;
     const timer = setTimeout(() => {
       handleSearch();
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, selectedNature, selectedMinistere, selectedYear]);
+  }, [isOpen, query, selectedNature, selectedMinistere, selectedYear]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-md animate-in fade-in">
