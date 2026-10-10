@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+.objectbox_data/
+.joradp_cache/
+*.keystore
+*.jks
+
