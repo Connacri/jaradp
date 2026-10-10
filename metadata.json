@@ -1,0 +1,7 @@
+{
+  "name": "JORADP - Journal Officiel Algérie",
+  "description": "Application cross-platform de consultation, recherche textuelle et téléchargement des Journaux Officiels de la République Algérienne Démocratique et Populaire (1962-2026).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
