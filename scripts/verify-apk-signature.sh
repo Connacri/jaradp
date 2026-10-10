@@ -31,6 +31,8 @@ if command -v apksigner &> /dev/null; then
   APKSIGNER_CMD="apksigner"
 elif [ -n "$ANDROID_HOME" ]; then
   APKSIGNER_CMD=$(find "$ANDROID_HOME/build-tools" -name "apksigner" 2>/dev/null | sort -V | tail -n 1)
+elif [ -d "/usr/local/lib/android/sdk/build-tools" ]; then
+  APKSIGNER_CMD=$(find "/usr/local/lib/android/sdk/build-tools" -name "apksigner" 2>/dev/null | sort -V | tail -n 1)
 elif [ -n "$ANDROID_SDK_ROOT" ]; then
   APKSIGNER_CMD=$(find "$ANDROID_SDK_ROOT/build-tools" -name "apksigner" 2>/dev/null | sort -V | tail -n 1)
 fi
