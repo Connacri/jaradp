@@ -290,6 +290,9 @@ app.get('/api/joradp/pdf/:year/:number', (req: Request, res: Response) => {
   const pad3 = String(number).padStart(3, '0');
   const officialUrl = getOfficialPdfUrl(year, number);
 
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="JORADP_${year}_N${pad3}.pdf"`);
 

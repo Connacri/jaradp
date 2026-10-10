@@ -78,11 +78,32 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
     setIsExtractingText(true);
     setExtractionProgress('Chargement du document PDF officiel...');
 
-    try {
-      const targetUrl = journal.localPdfProxyUrl || journal.pdfUrl;
-      const loadingTask = pdfjsLib.getDocument({ url: targetUrl, withCredentials: false });
-      const doc = await loadingTask.promise;
+    const pad3 = String(journal.number).padStart(3, '0');
+    const localBundledUrl = `./pdfs/${journal.year}/F${journal.year}${pad3}.pdf`;
+    const candidateUrls = [
+      journal.localPdfProxyUrl,
+      localBundledUrl,
+      journal.pdfUrl
+    ].filter(Boolean) as string[];
 
+    let doc: any = null;
+    for (const url of candidateUrls) {
+      try {
+        const loadingTask = pdfjsLib.getDocument({ url, withCredentials: false });
+        doc = await loadingTask.promise;
+        if (doc) break;
+      } catch (err) {
+        console.warn(`Extraction URL ${url} failed`, err);
+      }
+    }
+
+    if (!doc) {
+      setIsExtractingText(false);
+      setExtractionProgress('');
+      return;
+    }
+
+    try {
       let fullBuffer = '';
       const totalPages = Math.min(doc.numPages, 40);
 
@@ -103,38 +124,7 @@ export const JournalReaderModal: React.FC<JournalReaderModalProps> = ({
       setExtractedPdfText(fullBuffer.trim());
       setExtractionProgress('');
     } catch (err: any) {
-      console.warn('Proxy PDF extraction failed, retrying official URL...', err);
-      if (journal.pdfUrl && journal.pdfUrl !== journal.localPdfProxyUrl) {
-        try {
-          setExtractionProgress('Connexion directe au serveur JORADP...');
-          const fallbackTask = pdfjsLib.getDocument({ url: journal.pdfUrl, withCredentials: false });
-          const doc = await fallbackTask.promise;
-          let fullBuffer = '';
-          const totalPages = Math.min(doc.numPages, 40);
-
-          for (let i = 1; i <= totalPages; i++) {
-            setExtractionProgress(`Numérisation de la page ${i}/${doc.numPages}...`);
-            const page = await doc.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items
-              .map((item: any) => item.str)
-              .join(' ')
-              .replace(/\s+/g, ' ');
-
-            fullBuffer += `\n\n════════════════════════════════════════════════════════════\n` +
-                          `  PAGE ${i} · JOURNAL OFFICIEL N° ${journal.number} (${journal.year})\n` +
-                          `════════════════════════════════════════════════════════════\n\n` + pageText;
-          }
-
-          setExtractedPdfText(fullBuffer.trim());
-          setExtractionProgress('');
-          setIsExtractingText(false);
-          return;
-        } catch (fErr) {
-          console.error('Direct fallback extraction failed', fErr);
-        }
-      }
-      setExtractionProgress('Numérisation automatique non disponible pour ce numéro.');
+      console.warn('PDF text extraction error', err);
     } finally {
       setIsExtractingText(false);
     }
