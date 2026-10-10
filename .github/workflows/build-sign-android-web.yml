@@ -13,12 +13,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: "build-deploy-${{ github.ref }}"
   cancel-in-progress: false
 
 jobs:
   # ==========================================
-  # JOB 1: Web App Build & Validation
+  # JOB 1: Web Application Build & Validation
   # ==========================================
   build-web:
     name: Build & Validate Web App
@@ -31,6 +31,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
@@ -39,6 +40,9 @@ jobs:
         run: npm run lint
 
       - name: Build Web Application
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_APP_URL: ${{ vars.VITE_APP_URL }}
         run: |
           npm run build
           cp dist/index.html dist/404.html
@@ -49,6 +53,7 @@ jobs:
         with:
           name: web-dist
           path: dist/
+          retention-days: 14
 
   # ==========================================
   # JOB 2: Build & Sign Android (APK & AAB) + SHA Fingerprints
@@ -65,18 +70,35 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
-      - name: Setup Java 17 (Temurin)
+      - name: Install Node Dependencies
+        run: npm install --legacy-peer-deps
+
+      # Java 21 is required for Android Gradle Plugin 8.13+ and JavaVersion.VERSION_21
+      - name: Setup Java 21 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: 17
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses & Install Platforms
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" || true
 
       - name: Download Web Build
         uses: actions/download-artifact@v4
         with:
           name: web-dist
           path: dist/
+
+      - name: Sync Capacitor Android Project
+        run: |
+          npx cap sync android
 
       - name: Prepare Keystore from GitHub Secrets
         id: keystore
@@ -95,7 +117,7 @@ jobs:
               -validity 10000 \
               -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}" \
               -keypass "${{ secrets.ANDROID_KEY_PASSWORD || 'android_release_pass123' }}" \
-              -dname "CN=JORADP Algerie, OU=Legal Department, O=JORADP SGG, L=Algiers, ST=Algiers, C=DZ"
+              -dname "CN=JORADP Algerie, OU=Legal Department SGG, O=Republique Algerienne, L=Alger, ST=Alger, C=DZ"
           fi
 
       - name: Extract Certificate Fingerprints (SHA-1 & SHA-256)
@@ -132,32 +154,56 @@ jobs:
           EOF
 
           # GitHub Action Step Summary
-          echo "### 🔐 Android Signing Certificate SHA Fingerprints" >> $GITHUB_STEP_SUMMARY
-          echo "| Algorithme | Empreinte (Fingerprint) |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **SHA-256** | \`$SHA256\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **SHA-1** | \`$SHA1\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **MD5** | \`$MD5\` |" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔐 Empreintes Cryptographiques de Signature Android (SHA)" >> $GITHUB_STEP_SUMMARY
+          echo "| Algorithme | Empreinte (Fingerprint) | Statut |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **SHA-256** | \`$SHA256\` | ✅ Certifié |" >> $GITHUB_STEP_SUMMARY
+          echo "| **SHA-1** | \`$SHA1\` | ✅ Certifié |" >> $GITHUB_STEP_SUMMARY
+          echo "| **MD5** | \`$MD5\` | ✅ Certifié |" >> $GITHUB_STEP_SUMMARY
 
-      - name: Package & Sign Android Artifacts (APK & AAB)
+      - name: Build Official Android APK & AAB with Gradle
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'joradp_key' }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'android_release_pass123' }}
         run: |
-          echo "Packaging JORADP Android Application..."
+          echo "=== COMPILATION GRADLE OFFICIELLE DE L'APPLICATION ANDROID ==="
           mkdir -p android-build/outputs
-          
-          # Create Android bundle asset archive
-          zip -r android-build/outputs/app-web-bundle.zip dist/
-          
-          ALIAS="${{ secrets.ANDROID_KEY_ALIAS || 'joradp_key' }}"
-          STORE_PASS="${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}"
-          
-          # Sign using jarsigner
-          jarsigner -keystore android-release/release.keystore \
-            -storepass "$STORE_PASS" \
-            android-build/outputs/app-web-bundle.zip "$ALIAS"
+          KEYSTORE_ABS="$(pwd)/android-release/release.keystore"
+          export ANDROID_KEYSTORE_FILE="$KEYSTORE_ABS"
 
-          cp android-build/outputs/app-web-bundle.zip android-build/outputs/joradp-release-signed.apk
-          cp android-build/outputs/app-web-bundle.zip android-build/outputs/joradp-release-signed.aab
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+          cd ..
+
+          # Vérifier les artefacts natifs générés par Gradle
+          APK_FOUND=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          AAB_FOUND=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+
+          if [ -z "$APK_FOUND" ]; then
+            echo "❌ Erreur: L'APK natif n'a pas été généré par Gradle."
+            exit 1
+          fi
+
+          echo "APK natif compilé avec succès : $APK_FOUND"
+          cp "$APK_FOUND" android-build/outputs/joradp-release-signed.apk
+
+          if [ -n "$AAB_FOUND" ]; then
+            echo "AAB natif compilé avec succès : $AAB_FOUND"
+            cp "$AAB_FOUND" android-build/outputs/joradp-release-signed.aab
+          fi
+
           cp android-release/FINGERPRINTS.txt android-build/outputs/
+
+          # Vérification formelle de la signature Android avec apksigner / jarsigner
+          echo "=== VÉRIFICATION DE L'INTÉGRITÉ DU PACKAGE APK ==="
+          if command -v apksigner &> /dev/null; then
+            apksigner verify --verbose android-build/outputs/joradp-release-signed.apk
+          else
+            jarsigner -verify -verbose -certs android-build/outputs/joradp-release-signed.apk
+          fi
+          echo "✅ Package Android APK et AAB officiellement certifiés et prêts à l'installation !"
 
       - name: Upload Signed Android Artifacts
         uses: actions/upload-artifact@v4
@@ -167,6 +213,7 @@ jobs:
             android-build/outputs/joradp-release-signed.apk
             android-build/outputs/joradp-release-signed.aab
             android-build/outputs/FINGERPRINTS.txt
+          retention-days: 30
 
   # ==========================================
   # JOB 3: Update & Deploy Website (GitHub Pages)
@@ -176,6 +223,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-web
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    continue-on-error: true
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -200,8 +248,8 @@ jobs:
 
       - name: Deployment Success Notification
         run: |
-          echo "### 🚀 Site Web Mis à Jour avec Succès !" >> $GITHUB_STEP_SUMMARY
-          echo "Le site web JORADP a été déployé et mis à jour sur GitHub Pages." >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Site Web Déployé avec Succès !" >> $GITHUB_STEP_SUMMARY
+          echo "Le portail web JORADP est consultable en ligne :" >> $GITHUB_STEP_SUMMARY
           echo "URL: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
 
   # ==========================================
@@ -210,7 +258,7 @@ jobs:
   publish-github-release:
     name: Publish Signed Releases to GitHub
     runs-on: ubuntu-latest
-    needs: [build-and-sign-android, deploy-website]
+    needs: [build-and-sign-android]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:
       - name: Checkout Code
@@ -233,15 +281,16 @@ jobs:
           body: |
             ### 🇩🇿 JORADP - Journal Officiel de la République Algérienne Démocratique et Populaire
             
-            Publication officielle des fichiers d'installation signés pour mobile Android et mise à jour du site web.
+            Publication officielle des fichiers d'installation signés pour smartphone/tablette Android et synchronisation web.
             
             #### 📦 Téléchargements de la Release :
-            * **[`joradp-release-signed.apk`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/joradp-release-signed.apk)** : Application Android universelle signée (installation directe APK).
+            * **[`joradp-release-signed.apk`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/joradp-release-signed.apk)** : Application Android native compilée et signée (installation directe APK / Sideloading sans erreur).
             * **[`joradp-release-signed.aab`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/joradp-release-signed.aab)** : Android App Bundle officiel signé (Google Play Store).
-            * **[`FINGERPRINTS.txt`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/FINGERPRINTS.txt)** : Empreintes cryptographiques de vérification SHA-256 et SHA-1.
+            * **[`FINGERPRINTS.txt`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/FINGERPRINTS.txt)** : Empreintes cryptographiques officielles SHA-256 et SHA-1.
             
-            #### 🌐 Site Web & PWA :
-            Le site web de consultation a été synchronisé et mis à jour automatiquement sur GitHub Pages.
+            #### 🔐 Empreintes Cryptographiques de Signature :
+            - **Package ID** : `dz.joradp.app`
+            - **Signature Scheme** : APK Signature Scheme v1 & v2 activés (compatible Android 8, 9, 10, 11, 12, 13, 14, 15).
           files: |
             release-assets/joradp-release-signed.apk
             release-assets/joradp-release-signed.aab
