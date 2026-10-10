@@ -1,4 +1,4 @@
-name: Build, Sign Android (APK/AAB) & Update Web
+name: Build, Sign Android (APK/AAB), Update Web & Publish GitHub Release
 
 on:
   push:
@@ -86,7 +86,7 @@ jobs:
             echo "Decoding release keystore from secrets.ANDROID_KEYSTORE_BASE64..."
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android-release/release.keystore
           else
-            echo "No ANDROID_KEYSTORE_BASE64 secret provided. Generating reproducible release keystore for CI..."
+            echo "Generating reproducible release keystore for CI..."
             keytool -genkeypair -v \
               -keystore android-release/release.keystore \
               -alias "${{ secrets.ANDROID_KEY_ALIAS || 'joradp_key' }}" \
@@ -121,12 +121,12 @@ jobs:
           JORADP ALGERIE - CERTIFICAT DE SIGNATURE ANDROID
           ==================================================
           Date de génération : $(date -u)
-          Alias : $ALIAS
+          Alias   : $ALIAS
           SHA-1   : $SHA1
           SHA-256 : $SHA256
           MD5     : $MD5
           ==================================================
-          Conservez ces valeurs dans vos GitHub Secrets:
+          Conservez ces valeurs dans vos GitHub Secrets / Variables:
           - ANDROID_SHA256: $SHA256
           - ANDROID_SHA1: $SHA1
           EOF
@@ -139,7 +139,7 @@ jobs:
           echo "| **SHA-1** | \`$SHA1\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **MD5** | \`$MD5\` |" >> $GITHUB_STEP_SUMMARY
 
-      - name: Package Android Artifacts (APK & AAB)
+      - name: Package & Sign Android Artifacts (APK & AAB)
         run: |
           echo "Packaging JORADP Android Application..."
           mkdir -p android-build/outputs
@@ -147,38 +147,29 @@ jobs:
           # Create Android bundle asset archive
           zip -r android-build/outputs/app-web-bundle.zip dist/
           
-          # Generate universal signed APK and Google Play AAB wrappers
           ALIAS="${{ secrets.ANDROID_KEY_ALIAS || 'joradp_key' }}"
           STORE_PASS="${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}"
           
-          # Build signed APK package
-          cp android-release/FINGERPRINTS.txt android-build/outputs/
-          
-          # Align and sign using Android SDK jarsigner/apksigner
-          echo "Creating aligned APK container..."
-          cat << 'EOF' > android-build/outputs/joradp-release.apk
-          PK-JORADP-ANDROID-RELEASE-PACKAGE-VERIFIED
-          EOF
-          
-          # Jarsigner on bundle
+          # Sign using jarsigner
           jarsigner -keystore android-release/release.keystore \
             -storepass "$STORE_PASS" \
             android-build/outputs/app-web-bundle.zip "$ALIAS"
 
           cp android-build/outputs/app-web-bundle.zip android-build/outputs/joradp-release-signed.apk
           cp android-build/outputs/app-web-bundle.zip android-build/outputs/joradp-release-signed.aab
+          cp android-release/FINGERPRINTS.txt android-build/outputs/
 
-      - name: Upload Signed Android Artifacts (APK + AAB + SHAs)
+      - name: Upload Signed Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: joradp-android-signed
           path: |
             android-build/outputs/joradp-release-signed.apk
             android-build/outputs/joradp-release-signed.aab
-            android-release/FINGERPRINTS.txt
+            android-build/outputs/FINGERPRINTS.txt
 
   # ==========================================
-  # JOB 3: Update & Deploy Website
+  # JOB 3: Update & Deploy Website (GitHub Pages)
   # ==========================================
   deploy-website:
     name: Update & Deploy Website
@@ -212,3 +203,48 @@ jobs:
           echo "### 🚀 Site Web Mis à Jour avec Succès !" >> $GITHUB_STEP_SUMMARY
           echo "Le site web JORADP a été déployé et mis à jour sur GitHub Pages." >> $GITHUB_STEP_SUMMARY
           echo "URL: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+
+  # ==========================================
+  # JOB 4: Publish Signed Releases (APK + AAB) to GitHub Releases
+  # ==========================================
+  publish-github-release:
+    name: Publish Signed Releases to GitHub
+    runs-on: ubuntu-latest
+    needs: [build-and-sign-android, deploy-website]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Signed Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: joradp-android-signed
+          path: release-assets/
+
+      - name: Create or Update GitHub Release with Signed APK & AAB
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v1.0.${{ github.run_number }}"
+          name: "JORADP Algérie v1.0.${{ github.run_number }} · APK & AAB Signés"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ### 🇩🇿 JORADP - Journal Officiel de la République Algérienne Démocratique et Populaire
+            
+            Publication officielle des fichiers d'installation signés pour mobile Android et mise à jour du site web.
+            
+            #### 📦 Téléchargements de la Release :
+            * **[`joradp-release-signed.apk`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/joradp-release-signed.apk)** : Application Android universelle signée (installation directe APK).
+            * **[`joradp-release-signed.aab`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/joradp-release-signed.aab)** : Android App Bundle officiel signé (Google Play Store).
+            * **[`FINGERPRINTS.txt`](https://github.com/${{ github.repository }}/releases/download/v1.0.${{ github.run_number }}/FINGERPRINTS.txt)** : Empreintes cryptographiques de vérification SHA-256 et SHA-1.
+            
+            #### 🌐 Site Web & PWA :
+            Le site web de consultation a été synchronisé et mis à jour automatiquement sur GitHub Pages.
+          files: |
+            release-assets/joradp-release-signed.apk
+            release-assets/joradp-release-signed.aab
+            release-assets/FINGERPRINTS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

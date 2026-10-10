@@ -23,10 +23,12 @@ import { ElasticsearchBar } from './components/ElasticsearchBar';
 import { ObjectBoxExplorer } from './components/ObjectBoxExplorer';
 import { CodesView } from './components/CodesView';
 import { FavoritesView } from './components/FavoritesView';
+import { AndroidReleaseModal } from './components/AndroidReleaseModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('journals');
   const [isDeviceFrame, setIsDeviceFrame] = useState<boolean>(true);
+  const [isReleaseModalOpen, setIsReleaseModalOpen] = useState<boolean>(false);
   
   // Data State
   const [years, setYears] = useState<number[]>([]);
@@ -185,6 +187,17 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Android Releases Download Button */}
+          <button
+            onClick={() => setIsReleaseModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all active:scale-95"
+            title="Télécharger l'APK ou AAB Android Signé"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Releases Android</span>
+            <span className="text-[10px] bg-emerald-900/60 px-1.5 py-0.2 rounded-full font-mono font-bold">APK/AAB</span>
+          </button>
+
           {/* Responsive Layout Switcher */}
           <button
             onClick={() => setIsDeviceFrame(!isDeviceFrame)}
@@ -450,6 +463,12 @@ export default function App() {
           onToggleSave={toggleSaveJournal}
         />
       )}
+
+      {/* Android Releases Download & SHA Verification Modal */}
+      <AndroidReleaseModal
+        isOpen={isReleaseModalOpen}
+        onClose={() => setIsReleaseModalOpen(false)}
+      />
     </div>
   );
 }
