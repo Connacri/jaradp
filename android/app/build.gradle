@@ -82,3 +82,9 @@ tasks.withType(com.android.build.gradle.internal.tasks.CheckAarMetadataTask) {
     enabled = false
 }
 
+tasks.whenTaskAdded { task ->
+    if (task.name.contains("AarMetadata")) {
+        task.enabled = false
+    }
+}
+
