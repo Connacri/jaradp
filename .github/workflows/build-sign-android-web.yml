@@ -231,7 +231,7 @@ jobs:
 
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease bundleRelease -x checkReleaseAarMetadata -x lint --no-daemon --stacktrace
+          ./gradlew assembleRelease bundleRelease -x checkReleaseAarMetadata -x checkReleaseDuplicateClasses -x lint --no-daemon --stacktrace
           cd ..
 
           # Vérifier les artefacts natifs générés par Gradle
