@@ -161,6 +161,63 @@ jobs:
           echo "| **SHA-1** | \`$SHA1\` | ✅ Certifié |" >> $GITHUB_STEP_SUMMARY
           echo "| **MD5** | \`$MD5\` | ✅ Certifié |" >> $GITHUB_STEP_SUMMARY
 
+      - name: Ensure Android Native Resources Exist
+        run: |
+          mkdir -p android/app/src/main/res/values android/app/src/main/res/xml
+          if [ ! -f android/app/src/main/res/values/strings.xml ]; then
+            cat << 'EOF' > android/app/src/main/res/values/strings.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">JORADP Algérie</string>
+              <string name="title_activity_main">JORADP Algérie</string>
+              <string name="package_name">dz.joradp.app</string>
+              <string name="custom_url_scheme">dz.joradp.app</string>
+          </resources>
+          EOF
+          fi
+
+          if [ ! -f android/app/src/main/res/values/colors.xml ]; then
+            cat << 'EOF' > android/app/src/main/res/values/colors.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="colorPrimary">#047857</color>
+              <color name="colorPrimaryDark">#065F46</color>
+              <color name="colorAccent">#10B981</color>
+          </resources>
+          EOF
+          fi
+
+          if [ ! -f android/app/src/main/res/values/styles.xml ]; then
+            cat << 'EOF' > android/app/src/main/res/values/styles.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+                  <item name="colorPrimary">@color/colorPrimary</item>
+                  <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+                  <item name="colorAccent">@color/colorAccent</item>
+              </style>
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">@null</item>
+              </style>
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:background">@drawable/splash</item>
+              </style>
+          </resources>
+          EOF
+          fi
+
+          if [ ! -f android/app/src/main/res/xml/file_paths.xml ]; then
+            cat << 'EOF' > android/app/src/main/res/xml/file_paths.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <paths xmlns:android="http://schemas.android.com/apk/res/android">
+              <external-path name="my_images" path="." />
+              <cache-path name="my_cache_images" path="." />
+          </paths>
+          EOF
+          fi
+
       - name: Build Official Android APK & AAB with Gradle
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android_release_pass123' }}

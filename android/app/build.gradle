@@ -44,6 +44,9 @@ android {
 }
 
 repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
     flatDir {
         dirs 'libs'
         def cordovaLibs = file('../capacitor-cordova-android-plugins/src/main/libs')
